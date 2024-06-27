@@ -4,10 +4,11 @@ from vertexai.preview import generative_models
 from vertexai.preview.generative_models import GenerativeModel, Tool, Part, Content, ChatSession
 from services.flight_manager import search_flights
 
-project = "sample-gemini"
+project = "platinum-tube-425318-d5"
 vertexai.init(project = project)
 
 # Define Tool
+# telling the model I have a function. It doesn't need to know what it does. I tell this is how it works, this is how to invoke the function. Then I bind the function to the search tools
 get_search_flights = generative_models.FunctionDeclaration(
     name="get_search_flights",
     description="Tool for searching a flight with origin, destination, and departure date",
@@ -36,12 +37,14 @@ get_search_flights = generative_models.FunctionDeclaration(
     },
 )
 
+# Then I bind the function to the search tools
 # Define tool and model with tools
 search_tool = generative_models.Tool(
     function_declarations=[get_search_flights],
 )
 
 config = generative_models.GenerationConfig(temperature=0.4)
+
 # Load model with config
 model = GenerativeModel(
     "gemini-pro",
@@ -50,20 +53,25 @@ model = GenerativeModel(
 )
 
 # helper function to unpack responses
+# It checks if the response contains a function call with arguments,  if so, unpacks these arguments to call the search_flights function
 def handle_response(response):
     
     # Check for function call with intermediate step, always return response
     if response.candidates[0].content.parts[0].function_call.args:
+        # response includes a request to call an external function
         # Function call exists, unpack and load into a function
         response_args = response.candidates[0].content.parts[0].function_call.args
+        print("### in handle_response - function : "+response_args)
         
         function_params = {}
         for key in response_args:
             value = response_args[key]
             function_params[key] = value
         
+        #Sends a GET request to a FastAPI endpoint to search for flights based on various criteria.
         results = search_flights(**function_params)
         
+        # sending the above results to Google Gemini
         if results:
             intermediate_response = chat.send_message(
                 Part.from_function_response(
@@ -77,6 +85,7 @@ def handle_response(response):
             return "Search Failed"
     else:
         # Return just text
+        print("### in handle_response - text : "+response.candidates[0].content.parts[0].text)
         return response.candidates[0].content.parts[0].text
 
 # helper function to display and send streamlit messages
